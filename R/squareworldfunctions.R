@@ -1,5 +1,4 @@
 #square world functions:
-## Last updated: 3-11-16
 
 make_world<-function(rows, columns, ecotype){
   expand.rows<- 1: rows  # expand the number of rows from 1 to number specified
@@ -314,3 +313,228 @@ try_locoh <-function(coords,max_dist_all, percent = 90,unin, unout){
   return(results)
 }
 
+## This function is a complete wrapper for running the simulations in parallel
+hr_simulations<- function(q,myworld,Norgs=1,Nsteps=120,by_samples=c(1:4,6,12,1:4,6,12),ecotype=c("desert", "sage", "prairie"),unin="m",unout="m2",do.print = TRUE){
+  
+  iter = 1
+  
+  # source("/Volumes/g1$/NeCoopUnitStudents/HomerangeSimulations/Analysis/squareworldfunctions_102116.R", local = TRUE)
+  
+  source("/Users/cchizinski2/Desktop/Everything/squareworldfunctions_102116.R", local = TRUE)
+  
+  
+  # myworld <- make_world2 (1200, 1200)
+  
+  mcp_stor<-data.frame(matrix(NA,iter*length(by_samples)*length(ecotype),16))
+  names(mcp_stor)<-c("id","area_act_all", "area_act","area_obs","HR_calculate" ,"type","iter","num_sample_days","num_detect_days","sample_int","sample_type","ecotype", "max_dist_all", "max_dist_act","max_dist_obs","aval")
+  
+  kud_stor<-data.frame(matrix(NA,iter*length(by_samples)*length(ecotype),16))
+  names(kud_stor)<-c("id","area_act_all", "area_act","area_obs","HR_calculate" ,"type","iter","num_sample_days","num_detect_days","sample_int","sample_type","ecotype", "max_dist_all", "max_dist_act","max_dist_obs","aval")
+  
+  loco_stor<-data.frame(matrix(NA,iter*length(by_samples)*length(ecotype),16))
+  names(loco_stor)<-c("id","area_act_all", "area_act","area_obs","HR_calculate" ,"type","iter","num_sample_days","num_detect_days","sample_int","sample_type","ecotype", "max_dist_all", "max_dist_act","max_dist_obs", "aval")
+  
+  j = 0
+  l = 0
+  row_val <- 1
+  i = 1
+  
+  #Populate world
+  pop.world <- populate_world (Norgs, myworld, replace = F)
+  
+  #Move the organisms around
+  hr.world <- move_critters (pop_world=pop.world, myworld, world.type = "closed", Nsteps,
+                             homerange.type = "random", homerange.size = 492, mu = 0, rho = 0)
+  
+  for(l in 1:length(ecotype)){  # cycle through the ecotypes based on single movement pattern
+    hr.world<-set_ecotype(hr.world, ecotype[l])
+    
+    # Date sampling
+    for(j in 1:length(by_samples)){
+      
+      if(do.print ==TRUE){print(q)}
+      # paste("i=",i," ","l=", l," ", "j=",j, " row_val = ", row_val)
+      dates_needed<-datez_needed(Nsteps, j, by_sample_val =by_samples[j])
+      num_sample_days<-length(dates_needed)
+      
+      hr.world.all<-hr.world
+      hr.world.act<-hr.world[hr.world$step %in% dates_needed,]
+      hr.world.obs<-hr.world.act[hr.world.act$do.detect==1,]
+      
+      num_detect_days <- hr.world.obs %>%
+        group_by(org_id) %>%
+        summarise(NumDetect=length(do.detect))
+      
+      if(nrow(num_detect_days)==0){
+        num_detect_days<-NULL
+        num_detect_days$NumDetect <- 0
+      }
+      
+      # Create spatial data.frame #########################
+      
+      #All
+      xy_loc.all <-  data.frame(id=hr.world.all$org_id)
+      coordinates(xy_loc.all)<-hr.world.all [,c("x", "y")]
+      
+      #Actual
+      xy_loc.act <-  data.frame(id=hr.world.act$org_id)
+      coordinates(xy_loc.act)<-hr.world.act [,c("x", "y")]
+      
+      if(num_detect_days$NumDetect>0){
+        #Observed
+        xy_loc.obs <-  data.frame(id=hr.world.obs$org_id)
+        coordinates(xy_loc.obs)<-hr.world.obs [,c("x", "y")]
+      }
+      
+      #Observed
+      # xy_loc.obs <-  data.frame(id=hr.world.obs$org_id)
+      # coordinates(xy_loc.obs)<-hr.world.obs [,c("x", "y")]
+      
+      
+      # Calculate HR with different methods ##############
+      #MCP
+      mcp.data<-as.data.frame(mcp(xy_loc.all, unin = unin, unout = unout))
+      rownames(mcp.data)<-NULL
+      names(mcp.data)[2]<-"area_act_all"
+      mcp.data$area_act <-  as.data.frame(mcp(xy_loc.act, unin = unin, unout = unout))$area
+      
+      if(num_detect_days$NumDetect<5){
+        mcp.data$area_obs<-NA
+        mcp.data$HR_calculate<-0
+        max_dist_obs<-NA
+      }else{
+        mcp.data$area_obs<-as.data.frame(mcp(xy_loc.obs, unin = unin, unout = unout))[,2]
+        mcp.data$HR_calculate<-1
+        max_dist_obs<-max(dist(hr.world.obs [,c("x", "y")]))
+      }
+      
+      
+      
+      mcp.data$type<-"mcp"
+      mcp.data$iter<-q
+      
+      mcp.data$num_sample_days<-num_sample_days
+      mcp.data$num_detect_days<-num_detect_days$NumDetect
+      
+      mcp.data$sample_int<-by_samples[j]
+      
+      mcp.data$sample_type<-ifelse(j<=6,"seq","clus")
+      
+      mcp.data$ ecotype<-ecotype[l]
+      
+      mcp.data$max_dist_all<-max(dist(hr.world.all [,c("x", "y")]))
+      mcp.data$max_dist_act<-max(dist(hr.world.act [,c("x", "y")]))
+      mcp.data$max_dist_obs <- max_dist_obs
+      mcp.data$aval<-NA
+      
+      mcp_stor[(((i-1)*length(by_samples)*length(ecotype))+((l-1)*length(by_samples))+j),]<-mcp.data
+      
+      #KUD
+      
+      kud_all <- kernelUD(xy_loc.all, h="href", same4all=TRUE)
+      ka_all<-kernel.area(kud_all, percent=90, unin = unin, unout = unout)
+      
+      kud_act <- kernelUD(xy_loc.act, h="href", same4all=TRUE)
+      ka_act<-kernel.area(kud_act, percent=90, unin = unin, unout = unout)
+      
+      kud.data <- data.frame(id = names(ka_all), area_act_all = as.numeric(ka_all))
+      
+      kud.data$area_act <- as.numeric(ka_act)
+      
+      
+      
+      if(num_detect_days$NumDetect<5){
+        kud.data$area_obs<-NA
+        kud.data$HR_calculate<-0
+        max_dist_obs<-NA
+      }else{
+        kud_obs <- kernelUD(xy_loc.obs, h="href", same4all=TRUE)
+        ka_obs<-kernel.area(kud_obs, percent=90, unin = unin, unout = unout)
+        kud.data$area_obs <- as.numeric(ka_obs)
+        kud.data$HR_calculate<-1
+        max_dist_obs<-max(dist(hr.world.obs [,c("x", "y")]))}
+      
+      kud.data$type<-"kud"
+      kud.data$iter<-q
+      
+      kud.data$num_sample_days<-num_sample_days
+      kud.data$num_detect_days<-num_detect_days$NumDetect
+      
+      kud.data$sample_int<-by_samples[j]
+      
+      kud.data$sample_type<-ifelse(j<=6,"seq","clus")
+      
+      kud.data$ ecotype<-ecotype[l]
+      
+      kud.data$max_dist_all<-max(dist(hr.world.all [,c("x", "y")]))
+      kud.data$max_dist_act<-max(dist(hr.world.act [,c("x", "y")]))
+      kud.data$max_dist_obs <- max_dist_obs
+      kud.data$aval<-NA
+      
+      kud_stor[(((i-1)*length(by_samples)*length(ecotype))+((l-1)*length(by_samples))+j),]<-kud.data
+      
+      #LOCO
+      
+      max_dist_all<-max(dist(hr.world.all [,c("x", "y")]))
+      max_dist_act<-max(dist(hr.world.act [,c("x", "y")]))
+      
+      vals<-try_locoh(coords = xy_loc.all,max_dist_all=max_dist_all, unin=unin, unout=unout)
+      
+      aval<-vals$a
+      
+      vals_act<-try_loco_1(xy = xy_loc.act, aval*max_dist_act,percent=90, unin , unout)
+      
+      loco.data <- data.frame(id = "org_1", area_act_all = as.numeric(vals$hr))
+      
+      loco.data$area_act <- as.numeric(vals_act)
+      
+      if(num_detect_days$NumDetect<5){
+        loco.data$area_obs<-NA
+        loco.data$HR_calculate<-0
+        max_dist_obs<-NA
+      }else{
+        max_dist_obs <-max(dist(hr.world.obs[,c("x", "y")]))
+        
+        vals_obs<-try_loco_1(xy = xy_loc.obs, aval*max_dist_obs,percent=90, unin , unout)
+        
+        if(is.na(vals_obs)){
+          loco.data$area_obs<-NA
+          loco.data$HR_calculate<-3
+        }else{
+          loco.data$area_obs <- as.numeric(vals_obs)
+          loco.data$HR_calculate<-1 
+        }
+        
+      }
+      
+      loco.data$type<-"loco"
+      loco.data$iter<-q
+      
+      loco.data$num_sample_days<-num_sample_days
+      loco.data$num_detect_days<-num_detect_days$NumDetect
+      
+      loco.data$sample_int<-by_samples[j]
+      
+      loco.data$sample_type<-ifelse(j<=6,"seq","clus")
+      
+      loco.data$ecotype<-ecotype[l]
+      
+      loco.data$max_dist_all<-max_dist_all
+      loco.data$max_dist_act<-max_dist_act
+      loco.data$max_dist_obs <- max_dist_obs
+      loco.data$aval <-aval
+      
+      loco_stor[(((i-1)*length(by_samples)*length(ecotype))+((l-1)*length(by_samples))+j),]<-loco.data
+      row_val = row_val +1
+    }
+  }
+  
+  out<-list()
+  
+  out[["mcp"]] <- mcp_stor
+  out[["kud"]] <- kud_stor
+  out[["loco"]] <- loco_stor
+  
+  return(out)
+  
+}
