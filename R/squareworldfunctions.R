@@ -46,10 +46,10 @@ populate_world<-function(num_organisms, worldToPopulate, num_cell, replace = FAL
   square_world2
 }
 
-run.walk<- function(Nsteps, x1, y1, homerange.size, mu, rho){
+run.walk<- function(Nsteps, x1, y1, homerange.size, mu, rho, wb_shape, wb_scale){
   require(circular)
   
-  steplength<- rweibull(Nsteps, 2, 350)
+  steplength<- rweibull(Nsteps, wb_shape, wb_scale)
   thetaz<- suppressWarnings(rwrappedcauchy(Nsteps, mu= mu, rho= rho))
   uniformz <- runif(Nsteps, 0,1)
   
@@ -96,7 +96,7 @@ find.step<- function(walk.valz,homerange.size){
   return(walk.valz[,c("step","detect.prob","x","y")])
 }
 
-move_critters<-function(pop_world, myworld, world.type="closed",Nsteps, homerange.type="fixed", homerange.size, mu, rho){
+move_critters<-function(pop_world, myworld, world.type="closed",Nsteps, homerange.type="fixed", homerange.size, mu, rho, wb_shape = 2, wb_scale = 350){
   require(dplyr)
   require(circular)
   
@@ -320,7 +320,7 @@ hr_simulations<- function(q,myworld,Norgs=1,Nsteps=120,by_samples=c(1:4,6,12,1:4
   
   # source("/Volumes/g1$/NeCoopUnitStudents/HomerangeSimulations/Analysis/squareworldfunctions_102116.R", local = TRUE)
   
-  source("/Users/cchizinski2/Desktop/Everything/squareworldfunctions_102116.R", local = TRUE)
+  source("R/squareworldfunctions_102116.R", local = TRUE)
   
   
   # myworld <- make_world2 (1200, 1200)
@@ -344,7 +344,8 @@ hr_simulations<- function(q,myworld,Norgs=1,Nsteps=120,by_samples=c(1:4,6,12,1:4
   
   #Move the organisms around
   hr.world <- move_critters (pop_world=pop.world, myworld, world.type = "closed", Nsteps,
-                             homerange.type = "random", homerange.size = 492, mu = 0, rho = 0)
+                             homerange.type = "random", homerange.size = 492, mu = 0, rho = 0,
+                             wb_shape = 2, wb_scale = 350)
   
   for(l in 1:length(ecotype)){  # cycle through the ecotypes based on single movement pattern
     hr.world<-set_ecotype(hr.world, ecotype[l])
